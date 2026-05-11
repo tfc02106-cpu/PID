@@ -2,14 +2,13 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>PID 控制動態響應模擬器 (教學安全警告版)</title>
+    <title>PID 控制動態響應模擬器 (觸控優化版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { 
             font-family: "Microsoft JhengHei", Arial, sans-serif; 
             margin: 20px; 
             background-color: #f4f7f6; 
-            font-size: 18px; 
         }
         .container { 
             max-width: 1100px; 
@@ -18,14 +17,9 @@
             padding: 30px; 
             border-radius: 12px; 
             box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
-            position: relative;
         }
-        h2 { 
-            color: #2c3e50; 
-            text-align: center; 
-            font-size: 32px; 
-            margin-bottom: 30px;
-        }
+        h2 { text-align: center; font-size: 32px; color: #2c3e50; }
+
         .controls { 
             display: flex; 
             justify-content: space-around; 
@@ -33,58 +27,80 @@
             padding: 25px; 
             border-radius: 10px; 
             margin-bottom: 30px; 
+            flex-wrap: wrap; /* 支援手機排版 */
         }
-        .control-group { text-align: center; }
+
+        .control-group { 
+            text-align: center; 
+            margin: 10px;
+        }
+
         label { 
             display: block; 
             font-weight: bold; 
             margin-bottom: 10px; 
-            color: #34495e; 
             font-size: 22px; 
         }
-        input[type="number"] { 
-            width: 120px; 
-            padding: 10px; 
-            border: 2px solid #bdc3c7; 
-            border-radius: 6px; 
-            text-align: center; 
-            font-size: 22px; 
-            font-weight: bold;
-        }
-        .math-box { 
-            font-size: 20px; 
-            color: #7f8c8d; 
-            text-align: center; 
-            margin-top: 25px; 
-            padding: 15px;
-            background: #fff;
-            border-top: 1px solid #eee;
-        }
-        canvas { background: #fff; }
 
-        /* --- 警報畫面樣式 --- */
-        #warningOverlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background-color: rgba(255, 0, 0, 0.9);
-            z-index: 9999;
-            color: white;
-            text-align: center;
-            justify-content: center;
+        /* --- 觸控按鈕與輸入框組合 --- */
+        .input-stepper {
+            display: flex;
             align-items: center;
-            flex-direction: column;
-            animation: flash 0.5s infinite;
+            justify-content: center;
+            background: white;
+            border: 2px solid #bdc3c7;
+            border-radius: 8px;
+            overflow: hidden;
         }
-        #warningOverlay h1 { font-size: 100px; margin: 0; text-shadow: 5px 5px #000; }
-        #warningOverlay p { font-size: 40px; font-weight: bold; }
+
+        /* 隱藏原生箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+
+        input[type="number"] { 
+            width: 80px; 
+            height: 60px; /* 加高 */
+            border: none;
+            text-align: center; 
+            font-size: 26px; 
+            font-weight: bold;
+            outline: none;
+        }
+
+        /* 大按鈕樣式 */
+        .step-btn {
+            width: 60px;
+            height: 60px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            font-size: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            user-select: none; /* 防止長按選取文字 */
+        }
+
+        .step-btn:active { background-color: #2980b9; }
+        .step-btn.minus { border-right: 1px solid #bdc3c7; }
+        .step-btn.plus { border-left: 1px solid #bdc3c7; }
+
+        /* 警報遮罩... (保留之前的) */
+        #warningOverlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(255, 0, 0, 0.9); z-index: 9999; color: white;
+            text-align: center; justify-content: center; align-items: center;
+            flex-direction: column; animation: flash 0.5s infinite;
+        }
 
         @keyframes flash {
-            0% { background-color: rgba(255, 0, 0, 0.9); }
+            0%, 100% { background-color: rgba(255, 0, 0, 0.9); }
             50% { background-color: rgba(150, 0, 0, 0.9); }
-            100% { background-color: rgba(255, 0, 0, 0.9); }
         }
+        canvas { background: #fff; }
     </style>
 </head>
 <body>
@@ -92,7 +108,7 @@
 <div id="warningOverlay">
     <h1>⚠️ 警告 ⚠️</h1>
     <p>系統嚴重失控，機台即將炸裂！</p>
-    <button onclick="hideWarning()" style="font-size: 24px; padding: 10px 20px; cursor: pointer;">立即緊急停機並重設</button>
+    <button onclick="hideWarning()" style="font-size: 24px; padding: 10px 20px; margin-top:20px;">立即停機重設</button>
 </div>
 
 <div class="container">
@@ -101,31 +117,52 @@
     <div class="controls">
         <div class="control-group">
             <label>Kp (比例)</label>
-            <input type="number" id="kp" value="2" step="0.1" onchange="updateSim()">
+            <div class="input-stepper">
+                <button class="step-btn minus" onclick="changeVal('kp', -0.1)">-</button>
+                <input type="number" id="kp" value="2" step="0.1">
+                <button class="step-btn plus" onclick="changeVal('kp', 0.1)">+</button>
+            </div>
         </div>
         <div class="control-group">
             <label>Ki (積分)</label>
-            <input type="number" id="ki" value="1" step="0.1" onchange="updateSim()">
+            <div class="input-stepper">
+                <button class="step-btn minus" onclick="changeVal('ki', -0.1)">-</button>
+                <input type="number" id="ki" value="1" step="0.1">
+                <button class="step-btn plus" onclick="changeVal('ki', 0.1)">+</button>
+            </div>
         </div>
         <div class="control-group">
             <label>Kd (微分)</label>
-            <input type="number" id="kd" value="1" step="0.1" onchange="updateSim()">
+            <div class="input-stepper">
+                <button class="step-btn minus" onclick="changeVal('kd', -0.1)">-</button>
+                <input type="number" id="kd" value="1" step="0.1">
+                <button class="step-btn plus" onclick="changeVal('kd', 0.1)">+</button>
+            </div>
         </div>
         <div class="control-group">
-            <label>目標值 (Setpoint)</label>
-            <input type="number" id="setpoint" value="100" onchange="updateSim()">
+            <label>目標值 (SP)</label>
+            <div class="input-stepper">
+                <button class="step-btn minus" onclick="changeVal('setpoint', -10)">-</button>
+                <input type="number" id="setpoint" value="100">
+                <button class="step-btn plus" onclick="changeVal('setpoint', 10)">+</button>
+            </div>
         </div>
     </div>
 
     <canvas id="pidChart"></canvas>
-
-    <div class="math-box">
-        公式提示：$u(t) = K_p e(t) + K_i \int e(t)dt + K_d \frac{de(t)}{dt}$
-    </div>
 </div>
 
 <script>
 let chart;
+
+// --- 新增的數值調整邏輯 ---
+function changeVal(id, delta) {
+    const input = document.getElementById(id);
+    let newVal = (parseFloat(input.value) || 0) + delta;
+    // 處理浮點數精度問題 (如 0.1 + 0.2 = 0.30000004)
+    input.value = parseFloat(newVal.toFixed(2));
+    updateSim(); // 每次點擊後立即更新圖表
+}
 
 function runSimulation() {
     const Kp = parseFloat(document.getElementById('kp').value) || 0;
@@ -133,50 +170,30 @@ function runSimulation() {
     const Kd = parseFloat(document.getElementById('kd').value) || 0;
     const Setpoint = parseFloat(document.getElementById('setpoint').value) || 0;
 
-    const dt = 0.1; 
-    const totalTime = 50; 
-    let pv = 0; 
-    let integral = 0;
-    let lastError = 0;
+    const dt = 0.1, totalTime = 50; 
+    let pv = 0, integral = 0, lastError = 0, velocity = 0;
+    const mass = 1.0, friction = 0.1;
     
-    const timeData = [];
-    const pvData = [];
-    const spData = [];
-    
+    const timeData = [], pvData = [], spData = [];
     let triggerWarning = false;
-
-    let velocity = 0;
-    const mass = 1.0;
-    const friction = 0.1;
 
     for (let t = 0; t < totalTime; t += dt) {
         let error = Setpoint - pv;
         integral += error * dt;
         let derivative = (error - lastError) / dt;
-        
         let output = (Kp * error) + (Ki * integral) + (Kd * derivative);
         
         let acceleration = (output - friction * velocity) / mass;
         velocity += acceleration * dt;
         pv += velocity * dt;
-
         lastError = error;
 
         timeData.push(t.toFixed(1));
         pvData.push(pv.toFixed(2));
         spData.push(Setpoint);
 
-        // --- 警報判定條件 ---
-        // 1. 數值超過 220
-        if (pv > 220) {
-            triggerWarning = true;
-        }
-        // 2. 40秒後震盪仍超過 120
-        if (t >= 40 && pv > 120) {
-            triggerWarning = true;
-        }
+        if (pv > 220 || (t >= 40 && pv > 120)) triggerWarning = true;
     }
-
     return { timeData, pvData, spData, triggerWarning };
 }
 
@@ -186,15 +203,11 @@ function updateSim() {
     chart.data.datasets[0].data = data.pvData;
     chart.data.datasets[1].data = data.spData;
     chart.update();
-
-    if (data.triggerWarning) {
-        document.getElementById('warningOverlay').style.display = 'flex';
-    }
+    if (data.triggerWarning) document.getElementById('warningOverlay').style.display = 'flex';
 }
 
 function hideWarning() {
     document.getElementById('warningOverlay').style.display = 'none';
-    // 重設為安全參數
     document.getElementById('kp').value = 0.6;
     document.getElementById('ki').value = 0.05;
     document.getElementById('kd').value = 0.5;
@@ -204,46 +217,23 @@ function hideWarning() {
 const ctx = document.getElementById('pidChart').getContext('2d');
 Chart.defaults.font.size = 16; 
 const initData = runSimulation();
-
 chart = new Chart(ctx, {
     type: 'line',
     data: {
         labels: initData.timeData,
-        datasets: [{
-            label: '實測輸出 (PV)',
-            data: initData.pvData,
-            borderColor: '#3498db',
-            borderWidth: 3,
-            pointRadius: 0,
-            fill: false
-        }, {
-            label: '目標值 (Setpoint)',
-            data: initData.spData,
-            borderColor: '#e74c3c',
-            borderDash: [5, 5],
-            borderWidth: 2,
-            pointRadius: 0,
-            fill: false
-        }]
+        datasets: [{ label: '實測輸出 (PV)', data: initData.pvData, borderColor: '#3498db', borderWidth: 3, pointRadius: 0, fill: false },
+                   { label: '目標值 (SP)', data: initData.spData, borderColor: '#e74c3c', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, fill: false }]
     },
     options: {
         responsive: true,
         plugins: { legend: { labels: { font: { size: 18 } } } },
         scales: {
-            x: { 
-                title: { display: true, text: '時間 (s)', font: { size: 18, weight: 'bold' } },
-                ticks: { font: { size: 14 } } 
-            },
-            y: { 
-                title: { display: true, text: '數值', font: { size: 18, weight: 'bold' } },
-                ticks: { font: { size: 14 } },
-                min: 0 
-            }
+            x: { title: { display: true, text: '時間 (s)', font: { size: 18, weight: 'bold' } } },
+            y: { title: { display: true, text: '數值', font: { size: 18, weight: 'bold' } }, min: 0 }
         },
         animation: { duration: 400 }
     }
 });
 </script>
-
 </body>
 </html>
