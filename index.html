@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>PID 控制動態響應模擬器 (教學專用放大版)</title>
+    <title>PID 控制動態響應模擬器 (教學安全警告版)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { 
@@ -18,6 +18,7 @@
             padding: 30px; 
             border-radius: 12px; 
             box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+            position: relative;
         }
         h2 { 
             color: #2c3e50; 
@@ -60,9 +61,39 @@
             border-top: 1px solid #eee;
         }
         canvas { background: #fff; }
+
+        /* --- 警報畫面樣式 --- */
+        #warningOverlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(255, 0, 0, 0.9);
+            z-index: 9999;
+            color: white;
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            animation: flash 0.5s infinite;
+        }
+        #warningOverlay h1 { font-size: 100px; margin: 0; text-shadow: 5px 5px #000; }
+        #warningOverlay p { font-size: 40px; font-weight: bold; }
+
+        @keyframes flash {
+            0% { background-color: rgba(255, 0, 0, 0.9); }
+            50% { background-color: rgba(150, 0, 0, 0.9); }
+            100% { background-color: rgba(255, 0, 0, 0.9); }
+        }
     </style>
 </head>
 <body>
+
+<div id="warningOverlay">
+    <h1>⚠️ 警告 ⚠️</h1>
+    <p>系統嚴重失控，機台即將炸裂！</p>
+    <button onclick="hideWarning()" style="font-size: 24px; padding: 10px 20px; cursor: pointer;">立即緊急停機並重設</button>
+</div>
 
 <div class="container">
     <h2>PID 控制動態響應模擬器</h2>
@@ -97,7 +128,6 @@
 let chart;
 
 function runSimulation() {
-    // 獲取輸入參數
     const Kp = parseFloat(document.getElementById('kp').value) || 0;
     const Ki = parseFloat(document.getElementById('ki').value) || 0;
     const Kd = parseFloat(document.getElementById('kd').value) || 0;
@@ -112,8 +142,9 @@ function runSimulation() {
     const timeData = [];
     const pvData = [];
     const spData = [];
+    
+    let triggerWarning = false;
 
-    // 受控體物理參數
     let velocity = 0;
     const mass = 1.0;
     const friction = 0.1;
@@ -123,10 +154,8 @@ function runSimulation() {
         integral += error * dt;
         let derivative = (error - lastError) / dt;
         
-        // PID 運算
         let output = (Kp * error) + (Ki * integral) + (Kd * derivative);
         
-        // 模擬動態反應
         let acceleration = (output - friction * velocity) / mass;
         velocity += acceleration * dt;
         pv += velocity * dt;
@@ -136,9 +165,19 @@ function runSimulation() {
         timeData.push(t.toFixed(1));
         pvData.push(pv.toFixed(2));
         spData.push(Setpoint);
+
+        // --- 警報判定條件 ---
+        // 1. 數值超過 220
+        if (pv > 220) {
+            triggerWarning = true;
+        }
+        // 2. 40秒後震盪仍超過 120
+        if (t >= 40 && pv > 120) {
+            triggerWarning = true;
+        }
     }
 
-    return { timeData, pvData, spData };
+    return { timeData, pvData, spData, triggerWarning };
 }
 
 function updateSim() {
@@ -147,9 +186,21 @@ function updateSim() {
     chart.data.datasets[0].data = data.pvData;
     chart.data.datasets[1].data = data.spData;
     chart.update();
+
+    if (data.triggerWarning) {
+        document.getElementById('warningOverlay').style.display = 'flex';
+    }
 }
 
-// Chart.js 初始化配置
+function hideWarning() {
+    document.getElementById('warningOverlay').style.display = 'none';
+    // 重設為安全參數
+    document.getElementById('kp').value = 0.6;
+    document.getElementById('ki').value = 0.05;
+    document.getElementById('kd').value = 0.5;
+    updateSim();
+}
+
 const ctx = document.getElementById('pidChart').getContext('2d');
 Chart.defaults.font.size = 16; 
 const initData = runSimulation();
@@ -177,9 +228,7 @@ chart = new Chart(ctx, {
     },
     options: {
         responsive: true,
-        plugins: {
-            legend: { labels: { font: { size: 18 } } }
-        },
+        plugins: { legend: { labels: { font: { size: 18 } } } },
         scales: {
             x: { 
                 title: { display: true, text: '時間 (s)', font: { size: 18, weight: 'bold' } },
